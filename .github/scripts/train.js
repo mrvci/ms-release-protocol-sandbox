@@ -1,7 +1,7 @@
 // Release-train state engine for the sandbox mock.
 // One open issue (label: release-train) is the single source of truth per train.
 // State lives as JSON inside an HTML comment in the issue body; every workflow
-// mutates the state and re-renders the whole body from it. ALL DATA IS FAKE.
+// job mutates the state and re-renders the whole body from it. ALL DATA IS FAKE.
 
 const TRAIN_LABEL = 'release-train';
 const RELEASED_LABEL = 'released';
@@ -11,6 +11,7 @@ const SHARED_STAGES = [
   { key: 'ld-gate', label: 'LD merge gate', owner: 'Dev + Level Design' },
   { key: 'preflight-build', label: 'Pre-flight & candidate build', owner: 'Release Mgr' },
   { key: 'ccd-prod', label: 'CCD → Production', owner: 'Release Mgr / Tech' },
+  { key: 'store-metadata', label: 'Store metadata ready', owner: 'Release Mgr' },
   { key: 'close-train', label: 'Close train (merge + next RC)', owner: 'Dev' },
 ];
 
@@ -89,6 +90,7 @@ function renderMermaid(state) {
     { id: 'SBA', key: 'submit-android', label: 'Play submission' },
     { id: 'SBI', key: 'submit-ios', label: 'App Store submission' },
     { id: 'CCD', key: 'ccd-prod', label: 'CCD to Prod' },
+    { id: 'MD', key: 'store-metadata', label: 'Store metadata' },
     { id: 'ROA', key: 'rollout-android', label: 'Rollout Android' },
     { id: 'ROI', key: 'rollout-ios', label: 'Rollout iOS' },
     { id: 'CL', key: 'close-train', label: 'Close train' },
@@ -108,8 +110,11 @@ function renderMermaid(state) {
   lines.push('  PF --> QAA --> SBA --> ROA');
   lines.push('  PF --> QAI --> SBI --> ROI');
   lines.push('  PF --> CCD');
+  lines.push('  PF --> MD');
   lines.push('  CCD --> ROA');
   lines.push('  CCD --> ROI');
+  lines.push('  MD --> ROA');
+  lines.push('  MD --> ROI');
   lines.push('  ROA --> CL');
   lines.push('  ROI --> CL');
   lines.push('  classDef done fill:#1a7f37,stroke:#1a7f37,color:#ffffff');
@@ -231,14 +236,15 @@ async function saveTrain(github, context, issue, state) {
   });
 }
 
+// Terse per-job summary: only what THIS job did. Mock banner once, then facts.
 function summary(core, title, rows) {
-  let md = `### ${title}\n\n_All values below are **mock data** — this is the M1 look-and-feel sandbox._\n\n`;
+  let md = `### ${title} · _(mock)_\n\n`;
   md += rows.map((r) => `- ${r}`).join('\n');
   return core.summary.addRaw(md).write();
 }
 
 // ---------------------------------------------------------------------------
-// Actions — one per workflow. Dispatched via the ACTION env var.
+// Actions — dispatched via the ACTION env var; one per workflow job.
 // ---------------------------------------------------------------------------
 
 const actions = {
@@ -248,19 +254,15 @@ const actions = {
     const type = env.TRAIN_TYPE === 'hotfix' ? 'hotfix' : 'release';
     await ensureLabels(github, context);
     const state = newState(version, type);
-    logTimeline(state, context.actor, `train started (${type})`);
+    logTimeline(state, context.actor, `train started (${type}) — code freeze declared`);
     const title = type === 'hotfix'
       ? `🔥 Hotfix train — v${version}`
       : `🚦 Release train — v${version}`;
     const { data: issue } = await github.rest.issues.create({
       ...context.repo, title, labels: [TRAIN_LABEL], body: renderBody(state),
     });
-    await summary(core, `Train started — v${version} (${type})`, [
-      `Tracking issue: #${issue.number}`,
-      `RC branch: \`${state.branches.rc}\` (created at the end of the previous sprint)`,
-      state.branches.ld ? `LD branch: \`${state.branches.ld}\`` : 'No LD branch (hotfix)',
-      'Code freeze declared — the train has started. The dev window is pre-train.',
-      'First gate: dev-complete confirmation (expected to take 1–2 days).',
+    await summary(core, `Train started — v${version}`, [
+      `Tracking issue: #${issue.number} · RC: \`${state.branches.rc}\``,
     ]);
     core.notice(`Train issue created: #${issue.number}`);
   },
@@ -269,13 +271,10 @@ const actions = {
     const issue = await findTrain(github, context, env.VERSION);
     const state = parseState(issue.body);
     mark(state, 'dev-complete', context.actor, 'done', 'all release dev finished & merged');
-    logTimeline(state, context.actor,
-      'dev-complete confirmed — all development for this release is finished and merged into the RC');
+    logTimeline(state, context.actor, 'dev-complete confirmed');
     await saveTrain(github, context, issue, state);
-    await summary(core, 'Dev-complete confirmation', [
-      'Every dev confirmed their work for this release is finished and merged into the RC (mock).',
-      'This is the gate where the train intentionally waits 1–2 days while confirmations come in.',
-      `Approved via the \`dev-complete\` environment — recorded with approver, timestamp, and commit SHA.`,
+    await summary(core, 'Dev-complete', [
+      `All devs confirmed release work is merged into the RC — approved by @${context.actor}.`,
     ]);
   },
 
@@ -286,36 +285,47 @@ const actions = {
       core.warning('LD gate is N/A for hotfix trains — nothing to do.');
       return;
     }
-    mark(state, 'ld-gate', context.actor, 'done', 'LD contained in RC · designers confirmed');
-    logTimeline(state, context.actor, 'LD merge gate passed (ancestry ✓, designers confirmed)');
+    mark(state, 'ld-gate', context.actor, 'done', 'LD in RC · designers confirmed');
+    logTimeline(state, context.actor, 'LD merge gate passed');
     await saveTrain(github, context, issue, state);
     await summary(core, 'LD merge gate', [
-      `\`git merge-base --is-ancestor ${state.branches.ld} ${state.branches.rc}\` → **contained** ✓ (mock)`,
-      'Missing commits: **0** (mock)',
-      'Designer confirmation: level design confirms LD is final for this sprint ✓ (mock)',
+      `\`${state.branches.ld}\` contained in \`${state.branches.rc}\` — 0 missing commits. Designers confirmed.`,
     ]);
   },
 
   async 'preflight-build'({ github, context, core }, env) {
     const issue = await findTrain(github, context, env.VERSION);
     const state = parseState(issue.body);
-    state.builds.android = env.ANDROID_BUILD || '637';
-    state.builds.ios = env.IOS_BUILD || '632';
-    mark(state, 'preflight-build', context.actor, 'done',
-      `gates green · builds ${state.builds.android}/${state.builds.ios}`);
-    logTimeline(state, context.actor,
-      `pre-flight passed, candidate builds triggered on VGCI — Android ${state.builds.android}, iOS ${state.builds.ios}`);
+    mark(state, 'preflight-build', context.actor, 'active', 'gates green — awaiting builds');
+    logTimeline(state, context.actor, 'pre-flight gates passed');
     await saveTrain(github, context, issue, state);
-    await summary(core, 'Pre-flight gates & candidate build', [
-      `LD merged into RC: **PASS** (mock)${state.type === 'hotfix' ? ' — N/A (hotfix)' : ''}`,
-      `bundleVersion == ${state.version}: **PASS** (mock)`,
-      'Open P0/P1 Linear issues on this release: **0** (mock)',
-      'Tier-1 checks green on RC head: **PASS** (mock)',
-      'Addressables gates (dup bundle / atlas drift / labels / deps) on VGCI: **PASS**, 1 advisory (mock)',
-      'Merged LD levels enrolled in Addressables: **PASS** (mock)',
-      'LiveOps calendar aligned (offers validated + publish scheduled): **confirmed** (mock)',
-      'Store metadata ready (notes, screenshots, rollout plan): **confirmed** (mock)',
-      `→ VGCI \`unity-build\` triggered (mock): Android \`${state.builds.android}\`, iOS \`${state.builds.ios}\` · durations 42m / 47m (mock)`,
+    await summary(core, 'Pre-flight gates', [
+      'All gates green (detail: this run\'s steps above).',
+    ]);
+  },
+
+  async 'builds-triggered'({ github, context, core }, env) {
+    const issue = await findTrain(github, context, env.VERSION);
+    const state = parseState(issue.body);
+    logTimeline(state, context.actor, 'VGCI candidate builds triggered');
+    await saveTrain(github, context, issue, state);
+    await summary(core, 'Candidate builds triggered', [
+      'VGCI `unity-build` dispatched for Android + iOS.',
+    ]);
+  },
+
+  async 'record-builds'({ github, context, core }, env) {
+    const issue = await findTrain(github, context, env.VERSION);
+    const state = parseState(issue.body);
+    state.builds.android = env.ANDROID_BUILD || '—';
+    state.builds.ios = env.IOS_BUILD || '—';
+    mark(state, 'preflight-build', context.actor, 'done',
+      `builds ${state.builds.android}/${state.builds.ios} green`);
+    logTimeline(state, context.actor,
+      `candidate builds green — Android ${state.builds.android}, iOS ${state.builds.ios}`);
+    await saveTrain(github, context, issue, state);
+    await summary(core, 'Builds recorded', [
+      `Android \`${state.builds.android}\` · iOS \`${state.builds.ios}\`.`,
     ]);
   },
 
@@ -325,13 +335,10 @@ const actions = {
     const state = parseState(issue.body);
     const build = state.builds[platform];
     mark(state, `qa-${platform}`, context.actor, 'done', `build ${build} approved`);
-    logTimeline(state, context.actor, `QA sign-off (${platform}) approved for build ${build}`);
+    logTimeline(state, context.actor, `QA sign-off (${platform}) — build ${build}`);
     await saveTrain(github, context, issue, state);
     await summary(core, `QA sign-off — ${platform}`, [
-      `Build under test: \`${build}\` (mock)`,
-      'Smoke suite on device farm: **green** (mock)',
-      'Release-notes diff reviewed against the QA ticket (mock)',
-      `Approved via the \`qa-signoff-${platform}\` environment — recorded with approver, timestamp, and commit SHA.`,
+      `Build \`${build}\` QA-approved by @${context.actor}.`,
     ]);
   },
 
@@ -344,18 +351,17 @@ const actions = {
     const store = platform === 'android' ? 'Google Play' : 'App Store';
     if (step === 'submit-for-review') {
       mark(state, `submit-${platform}`, context.actor, 'active', `in ${store} review`);
-      logTimeline(state, context.actor, `build ${build} submitted to ${store} review`);
+      logTimeline(state, context.actor, `build ${build} → ${store} review`);
       await saveTrain(github, context, issue, state);
-      await summary(core, `Store submission — ${platform}`, [
-        `Build \`${build}\` submitted to **${store}** for review (mock).`,
-        'Run this workflow again with step = stores-approved once the store approves.',
+      await summary(core, `Submitted — ${platform}`, [
+        `Build \`${build}\` → **${store}** review.`,
       ]);
     } else {
       mark(state, `submit-${platform}`, context.actor, 'done', `${store} approved`);
-      logTimeline(state, context.actor, `${store} review approved for build ${build}`);
+      logTimeline(state, context.actor, `${store} approved build ${build}`);
       await saveTrain(github, context, issue, state);
-      await summary(core, `Store review approved — ${platform}`, [
-        `**${store}** approved build \`${build}\` (mock). Rollout unlocked once CCD is promoted.`,
+      await summary(core, `Store approved — ${platform}`, [
+        `**${store}** approved build \`${build}\`.`,
       ]);
     }
   },
@@ -364,15 +370,22 @@ const actions = {
     const issue = await findTrain(github, context, env.VERSION);
     const state = parseState(issue.body);
     mark(state, 'ccd-prod', context.actor, 'done',
-      `badges pinned — iOS ${state.builds.ios} / Android ${state.builds.android}`);
-    logTimeline(state, context.actor,
-      `CCD content promoted dev → prod, badges pinned (iOS ${state.builds.ios} / Android ${state.builds.android})`);
+      `badges — iOS ${state.builds.ios} / Android ${state.builds.android}`);
+    logTimeline(state, context.actor, 'CCD promoted dev → prod, badges pinned');
     await saveTrain(github, context, issue, state);
     await summary(core, 'CCD → Production', [
-      'Remote-content release promoted dev → prod, both platforms (mock).',
-      `Badges re-pinned: iOS \`${state.builds.ios}\`, Android \`${state.builds.android}\` (mock).`,
-      'Player-facing catalog verified post-promotion (mock).',
-      'Must complete BEFORE rollout starts — day-one users need prod content.',
+      `Promoted dev → prod. Badges pinned: iOS \`${state.builds.ios}\`, Android \`${state.builds.android}\`.`,
+    ]);
+  },
+
+  async 'store-metadata'({ github, context, core }, env) {
+    const issue = await findTrain(github, context, env.VERSION);
+    const state = parseState(issue.body);
+    mark(state, 'store-metadata', context.actor, 'done', 'notes, screenshots, rollout plan');
+    logTimeline(state, context.actor, 'store metadata confirmed ready');
+    await saveTrain(github, context, issue, state);
+    await summary(core, 'Store metadata', [
+      `Release notes, screenshots, and rollout plan confirmed by @${context.actor}.`,
     ]);
   },
 
@@ -386,9 +399,7 @@ const actions = {
     logTimeline(state, context.actor, `Android rollout → ${percent}%`);
     await saveTrain(github, context, issue, state);
     await summary(core, `Android rollout → ${percent}%`, [
-      `Google Play production track userFraction set to **${percent}%** (mock).`,
-      'Crash watch between steps: steady vs previous version (mock).',
-      done ? '**Android is fully live.**' : 'Next step: re-run this workflow with the next percentage.',
+      done ? '**Android is fully live.**' : `Play production track at **${percent}%**.`,
     ]);
   },
 
@@ -399,17 +410,15 @@ const actions = {
     if (action === 'start-phased-release') {
       state.rollout.ios = 'phased (Apple 7-day curve)';
       mark(state, 'rollout-ios', context.actor, 'active', '');
-      logTimeline(state, context.actor, 'iOS phased release started (Apple 7-day curve)');
+      logTimeline(state, context.actor, 'iOS phased release started');
     } else {
       state.rollout.ios = 'live to all users';
       mark(state, 'rollout-ios', context.actor, 'done', '');
-      logTimeline(state, context.actor, 'iOS released to all users');
+      logTimeline(state, context.actor, 'iOS live to all users');
     }
     await saveTrain(github, context, issue, state);
-    await summary(core, `iOS rollout — ${action}`, [
-      action === 'start-phased-release'
-        ? 'Phased release started. Apple controls the daily curve; you can only pause or release-to-all (mock).'
-        : '**iOS is fully live.** (mock)',
+    await summary(core, `iOS rollout`, [
+      action === 'start-phased-release' ? 'Phased release started.' : '**iOS is fully live.**',
     ]);
   },
 
@@ -419,14 +428,14 @@ const actions = {
     const nextRcExists = env.NEXT_RC_EXISTS === 'true';
     const nextVersion = env.NEXT_VERSION || 'next';
     const merges = [
-      `Merged \`${state.branches.rc}\` → \`main\` — **direct merge, no PR** (everything on the RC already came through PRs) (mock)`,
+      `Merged \`${state.branches.rc}\` → \`main\` (direct merge, no PR).`,
       nextRcExists
-        ? `\`releases/rc_v${nextVersion}.XX\` already exists → merged \`${state.branches.rc}\` → \`releases/rc_v${nextVersion}.XX\` — direct merge (mock)`
-        : `Created \`releases/rc_v${nextVersion}.XX\` + \`level-design/ld_v${nextVersion}.XX\` from the top of \`${state.branches.rc}\` (mock)`,
-      `Deleted \`${state.branches.rc}\`${state.branches.ld ? ' and `' + state.branches.ld + '`' : ''} (mock)`,
+        ? `\`releases/rc_v${nextVersion}.XX\` exists → merged \`${state.branches.rc}\` → \`releases/rc_v${nextVersion}.XX\`.`
+        : `Created \`releases/rc_v${nextVersion}.XX\` + \`level-design/ld_v${nextVersion}.XX\` from \`${state.branches.rc}\`.`,
+      `Deleted \`${state.branches.rc}\`${state.branches.ld ? ' and `' + state.branches.ld + '`' : ''}.`,
     ];
     state.trainStatus = 'released';
-    mark(state, 'close-train', context.actor, 'done', 'RC merged to main + next RC; branches deleted');
+    mark(state, 'close-train', context.actor, 'done', 'RC merged to main + next RC');
     logTimeline(state, context.actor, `train closed 🎉 — v${state.version} fully released`);
     await saveTrain(github, context, issue, state);
     await github.rest.issues.addLabels({
@@ -434,7 +443,7 @@ const actions = {
     });
     await github.rest.issues.createComment({
       ...context.repo, issue_number: issue.number,
-      body: `🏁 **v${state.version} train closed.**\n\n` + merges.map((m) => `- ${m}`).join('\n'),
+      body: `🏁 **v${state.version} train closed.**\n\n` + merges.map((m) => `- ${m} _(mock)_`).join('\n'),
     });
     await github.rest.issues.update({
       ...context.repo, issue_number: issue.number, state: 'closed', state_reason: 'completed',

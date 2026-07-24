@@ -1,0 +1,91 @@
+name: "Release · 02 — Phase A · Freeze → Build"
+run-name: "Phase A · Freeze → Build — ${{ inputs.version || 'latest train' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Train version (blank = latest open train)"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dev-complete:
+    name: "Gate · all release dev merged"
+    runs-on: ubuntu-latest
+    environment: dev-complete
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: dev-complete
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  ld-gate:
+    name: "Gate · LD merged + designers confirm"
+    needs: dev-complete
+    runs-on: ubuntu-latest
+    environment: ld-confirm
+    steps:
+      - uses: actions/checkout@v7
+      - name: "Check: LD branch contained in RC (ancestry)"
+        run: echo "(mock) git merge-base --is-ancestor -> contained, 0 missing commits"
+      - uses: actions/github-script@v9
+        env:
+          ACTION: ld-gate
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  preflight:
+    name: "Pre-flight gates"
+    needs: ld-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: "Check: bundleVersion matches train version"
+        run: echo "(mock) PASS"
+      - name: "Check: no open P0/P1 Linear issues on this release"
+        run: echo "(mock) 0 open"
+      - name: "Check: Tier-1 checks green on RC head"
+        run: echo "(mock) PASS"
+      - name: "Gate: Addressables suite on VGCI (dup / atlas / labels / deps)"
+        run: echo "(mock) PASS - 1 advisory"
+      - name: "Check: merged LD levels enrolled in Addressables"
+        run: echo "(mock) PASS"
+      - name: "Confirm: LiveOps calendar aligned"
+        run: echo "(mock) confirmed"
+      - uses: actions/github-script@v9
+        env:
+          ACTION: preflight-build
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  trigger-builds:
+    name: "Trigger VGCI candidate builds"
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: "Trigger: VGCI unity-build (Android + iOS)"
+        run: echo "(mock) CircleCI pipeline dispatched"
+      - uses: actions/github-script@v9
+        env:
+          ACTION: builds-triggered
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })

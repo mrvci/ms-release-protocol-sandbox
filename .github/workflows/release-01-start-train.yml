@@ -26,8 +26,8 @@ jobs:
     name: "Create the train tracking issue"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/github-script@v7
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
         env:
           ACTION: start-train
           VERSION: ${{ inputs.version }}

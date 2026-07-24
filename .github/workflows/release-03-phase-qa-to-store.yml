@@ -1,0 +1,144 @@
+name: "Release · 03 — Phase B · QA → Store approval"
+run-name: "Phase B · QA → Store approval — ${{ inputs.version || 'latest train' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Train version (blank = latest open train)"
+        required: false
+      android_build:
+        description: "Android build number (green on VGCI)"
+        required: true
+        default: "637"
+      ios_build:
+        description: "iOS build number (green on VGCI)"
+        required: true
+        default: "632"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  record-builds:
+    name: "Record green candidate builds"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: record-builds
+          VERSION: ${{ inputs.version }}
+          ANDROID_BUILD: ${{ inputs.android_build }}
+          IOS_BUILD: ${{ inputs.ios_build }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  qa-android:
+    name: "Gate · QA sign-off (Android)"
+    needs: record-builds
+    runs-on: ubuntu-latest
+    environment: qa-signoff-android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: qa
+          PLATFORM: android
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  qa-ios:
+    name: "Gate · QA sign-off (iOS)"
+    needs: record-builds
+    runs-on: ubuntu-latest
+    environment: qa-signoff-ios
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: qa
+          PLATFORM: ios
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  submit-android:
+    name: "Gate · submit to Google Play"
+    needs: qa-android
+    runs-on: ubuntu-latest
+    environment: store-submission-android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: submit
+          PLATFORM: android
+          STEP: submit-for-review
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  submit-ios:
+    name: "Gate · submit to App Store"
+    needs: qa-ios
+    runs-on: ubuntu-latest
+    environment: store-submission-ios
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: submit
+          PLATFORM: ios
+          STEP: submit-for-review
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  store-approved-android:
+    name: "Gate · Google Play approved"
+    needs: submit-android
+    runs-on: ubuntu-latest
+    environment: store-approved-android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: submit
+          PLATFORM: android
+          STEP: stores-approved
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  store-approved-ios:
+    name: "Gate · App Store approved"
+    needs: submit-ios
+    runs-on: ubuntu-latest
+    environment: store-approved-ios
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: submit
+          PLATFORM: ios
+          STEP: stores-approved
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })

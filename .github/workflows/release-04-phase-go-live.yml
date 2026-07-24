@@ -1,0 +1,178 @@
+name: "Release · 04 — Phase C · Go live → Close"
+run-name: "Phase C · Go live → Close — ${{ inputs.version || 'latest train' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Train version (blank = latest open train)"
+        required: false
+      next_version:
+        description: "Next train version (e.g. 1.18)"
+        required: true
+        default: "1.18"
+      next_rc_exists:
+        description: "Does the next RC branch already exist?"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  ccd-prod:
+    name: "Gate · CCD dev → prod + pin badges"
+    runs-on: ubuntu-latest
+    environment: ccd-production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: ccd-prod
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  store-metadata:
+    name: "Gate · store metadata ready"
+    runs-on: ubuntu-latest
+    environment: store-metadata
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: store-metadata
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  rollout-android-10:
+    name: "Gate · Android rollout 10%"
+    needs: [ccd-prod, store-metadata]
+    runs-on: ubuntu-latest
+    environment: rollout-android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: rollout-android
+          PERCENT: "10"
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  rollout-android-25:
+    name: "Gate · Android rollout 25%"
+    needs: rollout-android-10
+    runs-on: ubuntu-latest
+    environment: rollout-android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: rollout-android
+          PERCENT: "25"
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  rollout-android-50:
+    name: "Gate · Android rollout 50%"
+    needs: rollout-android-25
+    runs-on: ubuntu-latest
+    environment: rollout-android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: rollout-android
+          PERCENT: "50"
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  rollout-android-100:
+    name: "Gate · Android rollout 100%"
+    needs: rollout-android-50
+    runs-on: ubuntu-latest
+    environment: rollout-android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: rollout-android
+          PERCENT: "100"
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  rollout-ios-phased:
+    name: "Gate · iOS start phased release"
+    needs: [ccd-prod, store-metadata]
+    runs-on: ubuntu-latest
+    environment: rollout-ios
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: rollout-ios
+          ROLLOUT_ACTION: start-phased-release
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  rollout-ios-live:
+    name: "Gate · iOS live to all users"
+    needs: rollout-ios-phased
+    runs-on: ubuntu-latest
+    environment: rollout-ios
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          ACTION: rollout-ios
+          ROLLOUT_ACTION: release-to-all
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  close-train:
+    name: "Close train · merge + next RC"
+    needs: [rollout-android-100, rollout-ios-live]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: "Merge RC into main (direct merge, no PR)"
+        run: echo "(mock) merged"
+      - name: "Merge RC into next RC (or create next RC + LD)"
+        run: echo "(mock) merged / created"
+      - name: "Delete closed RC + LD branches"
+        run: echo "(mock) deleted"
+      - uses: actions/github-script@v9
+        env:
+          ACTION: close-train
+          VERSION: ${{ inputs.version }}
+          NEXT_VERSION: ${{ inputs.next_version }}
+          NEXT_RC_EXISTS: ${{ inputs.next_rc_exists }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
