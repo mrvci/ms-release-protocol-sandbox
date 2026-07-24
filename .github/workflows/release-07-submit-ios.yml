@@ -1,0 +1,57 @@
+name: "Release · 07 — Store submission (iOS)"
+run-name: "Store submission (iOS) — ${{ inputs.step }} — ${{ inputs.version || 'latest train' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Train version (blank = latest open train)"
+        required: false
+      step:
+        description: "Submission step"
+        required: true
+        type: choice
+        options:
+          - submit-for-review
+          - stores-approved
+        default: submit-for-review
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  submit:
+    name: "Submit to App Store review"
+    if: inputs.step == 'submit-for-review'
+    runs-on: ubuntu-latest
+    environment: store-submission-ios
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        env:
+          ACTION: submit
+          PLATFORM: ios
+          STEP: submit-for-review
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
+
+  approved:
+    name: "Record App Store approval"
+    if: inputs.step == 'stores-approved'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        env:
+          ACTION: submit
+          PLATFORM: ios
+          STEP: stores-approved
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })

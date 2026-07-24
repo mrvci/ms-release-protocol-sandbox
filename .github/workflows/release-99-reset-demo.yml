@@ -1,0 +1,23 @@
+name: "Release · 99 — Reset demo"
+run-name: "Reset demo — close all open trains"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  reset:
+    name: "Close all open train issues"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        env:
+          ACTION: reset-demo
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })

@@ -1,0 +1,38 @@
+name: "Release · 01 — Start train"
+run-name: "Start train — v${{ inputs.version }} (${{ inputs.train_type }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for this train (e.g. 1.17.00)"
+        required: true
+        default: "1.17.00"
+      train_type:
+        description: "Train type (hotfix trains skip the LD gate)"
+        required: true
+        type: choice
+        options:
+          - release
+          - hotfix
+        default: release
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  start:
+    name: "Create the train tracking issue"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        env:
+          ACTION: start-train
+          VERSION: ${{ inputs.version }}
+          TRAIN_TYPE: ${{ inputs.train_type }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })
