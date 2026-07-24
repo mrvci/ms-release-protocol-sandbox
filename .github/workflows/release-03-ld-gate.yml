@@ -1,5 +1,5 @@
-name: "Release · 05 — QA sign-off (iOS)"
-run-name: "QA sign-off (iOS) — ${{ inputs.version || 'latest train' }}"
+name: "Release · 03 — LD merge gate"
+run-name: "LD merge gate — ${{ inputs.version || 'latest train' }}"
 
 on:
   workflow_dispatch:
@@ -13,16 +13,14 @@ permissions:
   issues: write
 
 jobs:
-  qa-ios:
-    name: "Approve QA pass (iOS)"
+  ld-gate:
+    name: "Check LD is merged into RC + designer confirmation"
     runs-on: ubuntu-latest
-    environment: qa-signoff-ios
     steps:
       - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         env:
-          ACTION: qa
-          PLATFORM: ios
+          ACTION: ld-gate
           VERSION: ${{ inputs.version }}
         with:
           script: |

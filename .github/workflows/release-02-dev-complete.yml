@@ -1,5 +1,5 @@
-name: "Release · 02 — LD merge gate"
-run-name: "LD merge gate — ${{ inputs.version || 'latest train' }}"
+name: "Release · 02 — Dev-complete gate"
+run-name: "Dev-complete gate — ${{ inputs.version || 'latest train' }}"
 
 on:
   workflow_dispatch:
@@ -13,14 +13,15 @@ permissions:
   issues: write
 
 jobs:
-  ld-gate:
-    name: "Check LD is merged into RC + designer confirmation"
+  dev-complete:
+    name: "Confirm all release dev is finished and merged"
     runs-on: ubuntu-latest
+    environment: dev-complete
     steps:
       - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         env:
-          ACTION: ld-gate
+          ACTION: dev-complete
           VERSION: ${{ inputs.version }}
         with:
           script: |

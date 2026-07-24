@@ -1,4 +1,4 @@
-name: "Release · 08 — CCD → Production"
+name: "Release · 09 — CCD → Production"
 run-name: "CCD → Production — ${{ inputs.version || 'latest train' }}"
 
 on:

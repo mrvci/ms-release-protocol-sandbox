@@ -1,0 +1,30 @@
+name: "Release · 05 — QA sign-off (Android)"
+run-name: "QA sign-off (Android) — ${{ inputs.version || 'latest train' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Train version (blank = latest open train)"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  qa-android:
+    name: "Approve QA pass (Android)"
+    runs-on: ubuntu-latest
+    environment: qa-signoff-android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        env:
+          ACTION: qa
+          PLATFORM: android
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')
+            await run({ github, context, core })

@@ -1,4 +1,4 @@
-name: "Release · 07 — Store submission (iOS)"
+name: "Release · 08 — Store submission (iOS)"
 run-name: "Store submission (iOS) — ${{ inputs.step }} — ${{ inputs.version || 'latest train' }}"
 
 on:

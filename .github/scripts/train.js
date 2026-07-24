@@ -7,7 +7,7 @@ const TRAIN_LABEL = 'release-train';
 const RELEASED_LABEL = 'released';
 
 const SHARED_STAGES = [
-  { key: 'dev-window', label: 'Dev window', owner: 'Devs' },
+  { key: 'dev-complete', label: 'Dev-complete confirmation', owner: 'Devs / Release Mgr' },
   { key: 'ld-gate', label: 'LD merge gate', owner: 'Dev + Level Design' },
   { key: 'preflight-build', label: 'Pre-flight & candidate build', owner: 'Release Mgr' },
   { key: 'ccd-prod', label: 'CCD → Production', owner: 'Release Mgr / Tech' },
@@ -42,8 +42,8 @@ function newState(version, type) {
       stages[`${s.key}-${p}`] = { status: 'pending', meta: '', at: '', by: '' };
     }
   }
-  stages['dev-window'].status = 'active';
-  stages['dev-window'].meta = 'open — feature PRs → RC';
+  stages['dev-complete'].status = 'active';
+  stages['dev-complete'].meta = 'collecting dev confirmations — expected 1–2 days';
   if (type === 'hotfix') {
     stages['ld-gate'].status = 'na';
     stages['ld-gate'].meta = 'not applicable for hotfix trains';
@@ -89,6 +89,8 @@ function renderBody(state) {
   lines.push(`**Candidate builds:** Android \`${state.builds.android}\` · iOS \`${state.builds.ios}\``);
   lines.push('');
   lines.push('> Single source of truth for this train, maintained by the release workflows — do not edit by hand.');
+  lines.push('> The train starts at **code freeze** — the dev window is pre-train.');
+  lines.push('> **Pace targets:** dev-complete 1–2 days → build + QA + CCD ≤ 1 day total → store review & rollout run multi-day on their own clocks.');
   lines.push('> ⚠️ **Sandbox:** every value on this page is mock data.');
   lines.push('');
   lines.push('## Shared stages');
@@ -209,9 +211,24 @@ const actions = {
       `Tracking issue: #${issue.number}`,
       `RC branch: \`${state.branches.rc}\` (created at the end of the previous sprint)`,
       state.branches.ld ? `LD branch: \`${state.branches.ld}\`` : 'No LD branch (hotfix)',
-      'Dev window is OPEN — feature PRs flow into the RC.',
+      'Code freeze declared — the train has started. The dev window is pre-train.',
+      'First gate: dev-complete confirmation (expected to take 1–2 days).',
     ]);
     core.notice(`Train issue created: #${issue.number}`);
+  },
+
+  async 'dev-complete'({ github, context, core }, env) {
+    const issue = await findTrain(github, context, env.VERSION);
+    const state = parseState(issue.body);
+    mark(state, 'dev-complete', context.actor, 'done', 'all release dev finished & merged');
+    logTimeline(state, context.actor,
+      'dev-complete confirmed — all development for this release is finished and merged into the RC');
+    await saveTrain(github, context, issue, state);
+    await summary(core, 'Dev-complete confirmation', [
+      'Every dev confirmed their work for this release is finished and merged into the RC (mock).',
+      'This is the gate where the train intentionally waits 1–2 days while confirmations come in.',
+      `Approved via the \`dev-complete\` environment — recorded with approver, timestamp, and commit SHA.`,
+    ]);
   },
 
   async 'ld-gate'({ github, context, core }, env) {
@@ -236,7 +253,6 @@ const actions = {
     const state = parseState(issue.body);
     state.builds.android = env.ANDROID_BUILD || '637';
     state.builds.ios = env.IOS_BUILD || '632';
-    mark(state, 'dev-window', context.actor, 'done', 'closed at pre-flight');
     mark(state, 'preflight-build', context.actor, 'done',
       `gates green · builds ${state.builds.android}/${state.builds.ios}`);
     logTimeline(state, context.actor,

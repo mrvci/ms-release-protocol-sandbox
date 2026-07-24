@@ -9,6 +9,10 @@ before building anything real.
 
 ## How a train works
 
+- The train starts at **code freeze** — the dev window is pre-train background, not a stage.
+- **Pace targets:** the dev-complete gate is the one place the train intentionally idles
+  (1–2 days collecting confirmations). From pre-flight through CCD the target is ≤ 1 day total.
+  Store review and gradual rollout run multi-day on their own clocks.
 - One release = one **train issue** (label `release-train`) — the single source of truth.
   Every workflow rewrites its stage table + timeline. Don't edit it by hand.
 - Stages are **separate short workflow runs**, not one long-lived run. Human gates are
@@ -20,15 +24,16 @@ before building anything real.
 
 ## Demo script (the intended click path)
 
-1. **Actions → Release · 01 — Start train** → Run workflow (`1.17.00`, `release`) → the train issue appears under Issues.
-2. **02 — LD merge gate** → run it → issue updates (in real life: `git merge-base --is-ancestor` + designer confirmation).
-3. **03 — Pre-flight & candidate build** → run it → read the job summary: the full gate table (addressables gates, version bump, P0/P1, LD ancestry…), then the fake VGCI trigger.
-4. **04 — QA sign-off (Android)** → run it → the run **pauses, amber, "Waiting for review"** → open the run → **Review deployments** → approve with a comment. This is the core UX moment. Repeat 05 for iOS whenever you like — lanes are independent.
-5. **06 — Store submission (Android)** with `submit-for-review` (pauses for approval) → later re-run with `stores-approved`. 07 = iOS, days later.
-6. **08 — CCD → Production** → approval → badges "pinned" (must precede any rollout).
-7. **09 — Rollout (Android)** at 10 → 25 → 50 → 100 (each ramp = one approval). **10 — Rollout (iOS)**: start phased / release-to-all (Apple owns the daily curve).
-8. **11 — Close train** → merges RC → `main` + next RC (direct merges, no PRs), creates or reuses `rc_v1.18.XX`/`ld_v1.18.XX`, deletes the closed branches — all faked in the summary — and closes the issue 🎉.
-9. **99 — Reset demo** closes all open trains so you can start over.
+1. **Actions → Release · 01 — Start train** → Run workflow (`1.17.00`, `release`) → code freeze declared, the train issue appears under Issues with the dev-complete gate active.
+2. **02 — Dev-complete gate** → run it → **pauses for approval** — this is the gate where the real train idles 1–2 days while every dev confirms their release work is finished and merged.
+3. **03 — LD merge gate** → run it → issue updates (in real life: `git merge-base --is-ancestor` + designer confirmation).
+4. **04 — Pre-flight & candidate build** → run it → read the job summary: the full gate table (addressables gates, version bump, P0/P1, LD ancestry…), then the fake VGCI trigger.
+5. **05 — QA sign-off (Android)** → run it → the run **pauses, amber, "Waiting for review"** → open the run → **Review deployments** → approve with a comment. This is the core UX moment. Repeat 06 for iOS whenever you like — lanes are independent.
+6. **07 — Store submission (Android)** with `submit-for-review` (pauses for approval) → later re-run with `stores-approved`. 08 = iOS, days later.
+7. **09 — CCD → Production** → approval → badges "pinned" (must precede any rollout).
+8. **10 — Rollout (Android)** at 10 → 25 → 50 → 100 (each ramp = one approval). **11 — Rollout (iOS)**: start phased / release-to-all (Apple owns the daily curve).
+9. **12 — Close train** → merges RC → `main` + next RC (direct merges, no PRs), creates or reuses `rc_v1.18.XX`/`ld_v1.18.XX`, deletes the closed branches — all faked in the summary — and closes the issue 🎉.
+10. **99 — Reset demo** closes all open trains so you can start over.
 
 Also check the **Deployments** page (repo sidebar) after a few approvals — that's the native
 per-environment history view.
@@ -40,6 +45,7 @@ the actual people are configured as required reviewers in repo settings, not in 
 
 | Environment | Gate | Approver role |
 |---|---|---|
+| `dev-complete` | All release dev finished & merged (the train's 1–2 day idle point) | Devs / Release Mgr |
 | `qa-signoff-android` / `-ios` | QA pass per platform | QA |
 | `store-submission-android` / `-ios` | Submit to store review | Release Mgr / Store owner |
 | `ccd-production` | Remote-content promotion | Tech / Release Mgr |

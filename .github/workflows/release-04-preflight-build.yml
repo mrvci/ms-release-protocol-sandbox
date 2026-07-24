@@ -1,5 +1,5 @@
-name: "Release · 11 — Close train"
-run-name: "Close train — ${{ inputs.version || 'latest train' }}"
+name: "Release · 04 — Pre-flight & candidate build"
+run-name: "Pre-flight & candidate build — ${{ inputs.version || 'latest train' }}"
 
 on:
   workflow_dispatch:
@@ -7,32 +7,31 @@ on:
       version:
         description: "Train version (blank = latest open train)"
         required: false
-      next_version:
-        description: "Next train version (e.g. 1.18)"
+      android_build:
+        description: "Android build number"
         required: true
-        default: "1.18"
-      next_rc_exists:
-        description: "Does the next RC branch already exist? (devs pre-create them sometimes)"
+        default: "637"
+      ios_build:
+        description: "iOS build number"
         required: true
-        type: boolean
-        default: true
+        default: "632"
 
 permissions:
   contents: read
   issues: write
 
 jobs:
-  close-train:
-    name: "Merge RC to main + next RC, delete branches"
+  preflight-and-build:
+    name: "Run pre-flight gates, then trigger VGCI"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         env:
-          ACTION: close-train
+          ACTION: preflight-build
           VERSION: ${{ inputs.version }}
-          NEXT_VERSION: ${{ inputs.next_version }}
-          NEXT_RC_EXISTS: ${{ inputs.next_rc_exists }}
+          ANDROID_BUILD: ${{ inputs.android_build }}
+          IOS_BUILD: ${{ inputs.ios_build }}
         with:
           script: |
             const run = require(process.env.GITHUB_WORKSPACE + '/.github/scripts/train.js')

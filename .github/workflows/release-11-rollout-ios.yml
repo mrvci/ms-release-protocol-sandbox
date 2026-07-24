@@ -1,5 +1,5 @@
-name: "Release · 09 — Rollout (Android)"
-run-name: "Android rollout → ${{ inputs.percent }}% — ${{ inputs.version || 'latest train' }}"
+name: "Release · 11 — Rollout (iOS)"
+run-name: "iOS rollout — ${{ inputs.action }} — ${{ inputs.version || 'latest train' }}"
 
 on:
   workflow_dispatch:
@@ -7,32 +7,30 @@ on:
       version:
         description: "Train version (blank = latest open train)"
         required: false
-      percent:
-        description: "Rollout percentage on the Play production track"
+      action:
+        description: "iOS phased release action (Apple controls the daily curve)"
         required: true
         type: choice
         options:
-          - "10"
-          - "25"
-          - "50"
-          - "100"
-        default: "10"
+          - start-phased-release
+          - release-to-all
+        default: start-phased-release
 
 permissions:
   contents: read
   issues: write
 
 jobs:
-  rollout-android:
-    name: "Ramp Play rollout"
+  rollout-ios:
+    name: "iOS phased release"
     runs-on: ubuntu-latest
-    environment: rollout-android
+    environment: rollout-ios
     steps:
       - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         env:
-          ACTION: rollout-android
-          PERCENT: ${{ inputs.percent }}
+          ACTION: rollout-ios
+          ROLLOUT_ACTION: ${{ inputs.action }}
           VERSION: ${{ inputs.version }}
         with:
           script: |
