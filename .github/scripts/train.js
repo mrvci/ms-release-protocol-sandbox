@@ -55,6 +55,7 @@ function newState(version, type) {
     branches: branchNames(version, type),
     builds: { android: '—', ios: '—' },
     rollout: { android: 0, ios: '—' },
+    stages,
     timeline: [],
   };
 }
@@ -197,7 +198,6 @@ const actions = {
     const type = env.TRAIN_TYPE === 'hotfix' ? 'hotfix' : 'release';
     await ensureLabels(github, context);
     const state = newState(version, type);
-    state.stages = state.stages || {};
     logTimeline(state, context.actor, `train started (${type})`);
     const title = type === 'hotfix'
       ? `🔥 Hotfix train — v${version}`
