@@ -24,7 +24,7 @@ before building anything real.
 
 ## Demo script (the intended click path)
 
-1. **Actions → Release · 01 — Start train** → Run workflow (`1.17.00`, `release`) → code freeze declared, the train issue appears under Issues with the dev-complete gate active.
+1. **Actions → Release · 01 — Start train** → Run workflow (`1.17.00`, `release`) → code freeze declared, the train issue appears under Issues with a live pipeline graph and the dev-complete gate active.
 2. **02 — Dev-complete gate** → run it → **pauses for approval** — this is the gate where the real train idles 1–2 days while every dev confirms their release work is finished and merged.
 3. **03 — LD merge gate** → run it → issue updates (in real life: `git merge-base --is-ancestor` + designer confirmation).
 4. **04 — Pre-flight & candidate build** → run it → read the job summary: the full gate table (addressables gates, version bump, P0/P1, LD ancestry…), then the fake VGCI trigger.

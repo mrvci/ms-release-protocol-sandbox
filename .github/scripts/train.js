@@ -79,6 +79,52 @@ function rolloutBar(percent) {
   return '`' + '▓'.repeat(filled) + '░'.repeat(10 - filled) + '` ' + percent + '%';
 }
 
+function renderMermaid(state) {
+  const nodes = [
+    { id: 'DC', key: 'dev-complete', label: 'Dev-complete' },
+    { id: 'LD', key: 'ld-gate', label: 'LD gate' },
+    { id: 'PF', key: 'preflight-build', label: 'Pre-flight + Build' },
+    { id: 'QAA', key: 'qa-android', label: 'QA Android' },
+    { id: 'QAI', key: 'qa-ios', label: 'QA iOS' },
+    { id: 'SBA', key: 'submit-android', label: 'Play submission' },
+    { id: 'SBI', key: 'submit-ios', label: 'App Store submission' },
+    { id: 'CCD', key: 'ccd-prod', label: 'CCD to Prod' },
+    { id: 'ROA', key: 'rollout-android', label: 'Rollout Android' },
+    { id: 'ROI', key: 'rollout-ios', label: 'Rollout iOS' },
+    { id: 'CL', key: 'close-train', label: 'Close train' },
+  ];
+  const lines = ['```mermaid', 'flowchart LR'];
+  const byStatus = { done: [], active: [], pending: [], na: [] };
+  for (const n of nodes) {
+    const stage = state.stages[n.key];
+    let label = n.label;
+    if (n.key === 'rollout-android' && state.rollout.android > 0) { label += ' ' + state.rollout.android + '%'; }
+    if (n.key === 'rollout-ios' && state.rollout.ios !== '—') { label += ' · ' + state.rollout.ios; }
+    if (stage.status === 'na') { label += ' (N/A)'; }
+    lines.push(`  ${n.id}["${label}"]`);
+    byStatus[stage.status].push(n.id);
+  }
+  lines.push('  DC --> LD --> PF');
+  lines.push('  PF --> QAA --> SBA --> ROA');
+  lines.push('  PF --> QAI --> SBI --> ROI');
+  lines.push('  PF --> CCD');
+  lines.push('  CCD --> ROA');
+  lines.push('  CCD --> ROI');
+  lines.push('  ROA --> CL');
+  lines.push('  ROI --> CL');
+  lines.push('  classDef done fill:#1a7f37,stroke:#1a7f37,color:#ffffff');
+  lines.push('  classDef active fill:#9a6700,stroke:#9a6700,color:#ffffff');
+  lines.push('  classDef pending fill:#57606a,stroke:#57606a,color:#ffffff');
+  lines.push('  classDef na fill:#57606a,stroke:#57606a,color:#ffffff,stroke-dasharray:4 4');
+  for (const status of Object.keys(byStatus)) {
+    if (byStatus[status].length > 0) {
+      lines.push(`  class ${byStatus[status].join(',')} ${status}`);
+    }
+  }
+  lines.push('```');
+  return lines;
+}
+
 function renderBody(state) {
   const trainIcon = state.trainStatus === 'released' ? '🏁' : state.type === 'hotfix' ? '🔥' : '🟢';
   const lines = [];
@@ -92,6 +138,8 @@ function renderBody(state) {
   lines.push('> The train starts at **code freeze** — the dev window is pre-train.');
   lines.push('> **Pace targets:** dev-complete 1–2 days → build + QA + CCD ≤ 1 day total → store review & rollout run multi-day on their own clocks.');
   lines.push('> ⚠️ **Sandbox:** every value on this page is mock data.');
+  lines.push('');
+  lines.push(...renderMermaid(state));
   lines.push('');
   lines.push('## Shared stages');
   lines.push('');
