@@ -1,0 +1,117 @@
+# MSTECH-1570 — Addressables duplicate-bundle gate, at the PR (names the culprit commit).
+#
+# Destination: marblesort repo, .github/workflows/addressables-duplicate-check.yml
+# Prerequisites there:
+#   1. Unity license secrets (UNITY_LICENSE, or UNITY_EMAIL/UNITY_PASSWORD/UNITY_SERIAL)
+#      — dedicated license from Voodoo IT; the CircleCI licensing server is machine-local.
+#   2. First run is cold: ~50-60 min import to a warm Library (~7 GB checkout measured).
+#      After that the Library cache makes it minutes. Watch the 10 GB repo cache quota —
+#      the compressed Android Library entry is the main tenant.
+#
+# Semantics (from AddressablesDuplicateBundleCheck.RunForCI — do not soften):
+#   exit 0 = clean · exit 1 = un-allowlisted duplicates · exit 2 = COULD NOT ANALYZE
+#   Exit 2 fails the job. "analyzed: false" must never read as green (fail closed).
+#
+# The check runs OUTSIDE any player build — RefreshAnalysis inside a build hook is
+# illegal ("Cannot build asset bundles while a build is in progress", MSTECH-1294).
+
+name: "Addressables · duplicate-bundle check"
+run-name: "Duplicate-bundle check — PR #${{ github.event.pull_request.number }}"
+
+on:
+  pull_request:
+    paths:
+      - "Assets/AddressableAssetsData/**"
+      - "Assets/Root/Offers/**"
+      - "Assets/Root/Skinning/**"
+      - "Assets/VoodooLive/Offers/**"
+      - "Assets/Root/Build/AddressablesAnalyzeAllowlist.asset"
+      - "Assets/Root/Build/Editor/AddressablesDuplicateBundleCheck.cs"
+      - ".github/workflows/addressables-duplicate-check.yml"
+
+concurrency:
+  group: dup-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  allowlist-watch:
+    name: "Flag allowlist changes for review"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Comment when the allowlist changed in this PR"
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const allowlistPath = 'Assets/Root/Build/AddressablesAnalyzeAllowlist.asset'
+            const marker = '<!-- dup-check-allowlist-watch -->'
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo, pull_number: context.issue.number, per_page: 100,
+            })
+            const touched = files.some((f) => f.filename === allowlistPath)
+            if (!touched) { return }
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            })
+            if (comments.some((c) => c.body.includes(marker))) { return }
+            await github.rest.issues.createComment({
+              ...context.repo, issue_number: context.issue.number,
+              body: marker + '\n⚠️ **This PR edits the Addressables duplicate allowlist.** ' +
+                'Reviewer: confirm each newly allowed duplicate is intentional — the allowlist ' +
+                'is the sanctioned escape hatch, and additions should be visible, not silent.',
+            })
+
+  duplicate-check:
+    name: "Check Duplicate Bundle Dependencies (Unity analyze)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: "Restore Library cache"
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: unity-library-android-${{ hashFiles('Packages/packages-lock.json', 'ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: |
+            unity-library-android-
+
+      - name: "Run AddressablesDuplicateBundleCheck.RunForCI"
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          projectPath: .
+          unityVersion: auto
+          targetPlatform: Android
+          buildMethod: MarbleSort.Build.Editor.AddressablesDuplicateBundleCheck.RunForCI
+
+      - name: "Comment on failure"
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const marker = '<!-- dup-check-failure -->'
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            })
+            const body = marker + '\n❌ **Duplicate-bundle gate failed on this PR.**\n\n' +
+              `Violations are listed in the [job log](${runUrl}) under \`[AddressablesDuplicateBundleCheck]\`.\n` +
+              '- Exit 1 — this PR introduces un-allowlisted duplicate bundle dependencies: move the shared ' +
+              'asset into a single Local group, or (if intentional) add it to the allowlist so the change is reviewed.\n' +
+              '- Exit 2 — the analysis COULD NOT RUN (fail-closed): the CI environment is misconfigured; do not merge on red.'
+            const existing = comments.find((c) => c.body.includes(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body })
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body })
+            }

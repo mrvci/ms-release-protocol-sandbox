@@ -81,3 +81,26 @@ a **rejected** gate fails the run (recover via *Re-run failed jobs* — succeede
 results), loops (re-QA after a fix) don't exist in a DAG, and the run must live for the whole
 train (GitHub caps a run at 35 days; each pending approval times out after 30). The phase
 split (02/03/04) is the hedge: same approvals, three shorter DAGs, natural restart points.
+
+## MSTECH-1570 — duplicate-bundle PR gate (first real workload)
+
+Goal: run `AddressablesDuplicateBundleCheck.RunForCI` on marblesort PRs that touch
+addressables/offer/skin content, so the culprit commit is named at review time
+(the `/trigger-build` pre-flight only catches it post-merge).
+
+**Status & the one blocker.** Everything is written; the blocker is a Unity license
+reachable from GitHub-hosted runners. Voodoo's CI licensing is a licensing server
+local to the CircleCI machines (per #vgci-support) — GHA can't use it. The sanctioned
+path is a dedicated license from Voodoo IT. Once secrets exist here, run
+**Proof · 95 — Unity license in GHA**: a green run retires the blocker.
+
+- `unity-proof/` — minimal Unity `6000.3.16f1` project (version read from
+  ProjectVersion.txt) with a `CIProbe.Run` -executeMethod probe.
+- `game-repo/addressables-duplicate-check.yml` — the ready-to-install marblesort
+  workflow: path-scoped `pull_request` trigger, Library cache, GameCI android image,
+  fail-closed semantics (exit 2 = could-not-analyze fails), PR failure comment, and
+  an allowlist-watch job that flags allowlist edits for reviewers.
+
+Fallbacks if a dedicated license is refused: run the check as a custom VGCI job
+(ask #vgci-support; licensing already solved there, but PR-time triggering and
+status reporting get more complex), or a self-hosted runner with an existing seat.

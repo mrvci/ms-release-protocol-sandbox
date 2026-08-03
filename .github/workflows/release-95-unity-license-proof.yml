@@ -1,0 +1,76 @@
+name: "Proof · 95 — Unity license in GHA (MSTECH-1570)"
+run-name: "Unity license proof — 6000.3.16f1 on a GitHub-hosted runner"
+
+# Proves the ONE unknown blocking the duplicate-bundle PR gate: can a
+# GitHub-hosted runner boot licensed Unity? Voodoo's CI licensing is a
+# licensing server local to the CircleCI machines — unreachable from here —
+# so this needs a dedicated license (Voodoo IT can issue one, per #vgci-support).
+#
+# Add ONE of these secret sets to the repo, then run this workflow:
+#   A) UNITY_LICENSE                      — contents of a .ulf license file
+#   B) UNITY_EMAIL + UNITY_PASSWORD + UNITY_SERIAL — pro/dedicated serial
+#
+# Green run = the blocker is gone and the real gate can be installed in marblesort.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: "Check license secrets are present"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Detect which license secrets exist"
+        env:
+          HAS_ULF: ${{ secrets.UNITY_LICENSE != '' }}
+          HAS_SERIAL: ${{ secrets.UNITY_EMAIL != '' && secrets.UNITY_PASSWORD != '' && secrets.UNITY_SERIAL != '' }}
+        run: |
+          if [ "$HAS_ULF" = "true" ] || [ "$HAS_SERIAL" = "true" ]; then
+            echo "License secrets found — proceeding to boot Unity."
+            exit 0
+          fi
+          echo "::error title=No Unity license secrets::Add ONE secret set to this repo (Settings -> Secrets -> Actions): (A) UNITY_LICENSE = contents of a .ulf file, or (B) UNITY_EMAIL + UNITY_PASSWORD + UNITY_SERIAL. Voodoo's CircleCI licensing server is machine-local and unusable from GitHub-hosted runners - request a dedicated license from IT (the path #vgci-support recommends)."
+          exit 1
+
+  boot-unity:
+    name: "Boot Unity 6000.3.16f1 + run -executeMethod probe"
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: "Cache probe Library"
+        uses: actions/cache@v4
+        with:
+          path: unity-proof/Library
+          key: unity-proof-library-${{ hashFiles('unity-proof/ProjectSettings/ProjectVersion.txt') }}
+
+      - name: "Run CIProbe.Run via GameCI"
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          projectPath: unity-proof
+          unityVersion: auto
+          targetPlatform: Android
+          buildMethod: CIProbe.Run
+
+      - name: "Report"
+        run: |
+          {
+            echo "### Unity license proof · PASSED"
+            echo ""
+            echo "- GameCI container booted Unity (version read from ProjectVersion.txt, never hardcoded)."
+            echo "- License acquired on a GitHub-hosted runner."
+            echo "- \`-executeMethod\` probe ran and exited 0 — the same invocation shape as"
+            echo "  \`MarbleSort.Build.Editor.AddressablesDuplicateBundleCheck.RunForCI\`."
+            echo ""
+            echo "**Next:** install \`game-repo/addressables-duplicate-check.yml\` in the marblesort repo."
+          } >> "$GITHUB_STEP_SUMMARY"
